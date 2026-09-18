@@ -1,0 +1,583 @@
+-- ==========================================
+-- MAXGAN SHOP THEME - XENO EXECUTOR FIXED (STEAL A EGG)
+-- ==========================================
+
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+-- ==========================================
+-- 0. ระบบตรวจสอบแมพสมาร์ท
+-- ==========================================
+local function CheckIsRideAPet()
+    local isCorrectMap = false
+    local success, gameInfo = pcall(function()
+        return MarketplaceService:GetProductInfo(game.PlaceId)
+    end)
+
+    if success and gameInfo then
+        local gameName = string.lower(gameInfo.Name or "")
+        local gameDesc = string.lower(gameInfo.Description or "")
+        if (string.find(gameName, "ride") and string.find(gameName, "pet")) or string.find(gameDesc, "ride a pet") then
+            isCorrectMap = true
+        end
+    end
+
+    if not isCorrectMap then
+        local hasPlots = Workspace:FindFirstChild("Plots") or Workspace:FindFirstChild("Bases") or Workspace:FindFirstChild("PlayerPlots")
+        local hasPets = Workspace:FindFirstChild("Pets") or Workspace:FindFirstChild("Pet") or Workspace:FindFirstChild("Eggs") or Workspace:FindFirstChild("Egg")
+        if hasPlots and hasPets then
+            isCorrectMap = true
+        end
+    end
+
+    return isCorrectMap
+end
+
+if not CheckIsRideAPet() then
+    LocalPlayer:Kick("เฉพาะแมพ Ride a Pet")
+    return
+end
+
+-- ==========================================
+-- ระบบบันทึกจุดยืนเริ่มต้น (จุดฐาน)
+-- ==========================================
+local savedSpawnCFrame = nil
+
+local function UpdateSpawnPosition()
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        savedSpawnCFrame = char.HumanoidRootPart.CFrame
+    end
+end
+
+task.spawn(function()
+    while not savedSpawnCFrame do
+        UpdateSpawnPosition()
+        task.wait(1)
+    end
+end)
+
+-- ==========================================
+-- ฟังก์ชันบังคับขี่สัตว์ (รองรับ Xeno)
+-- ==========================================
+local function AutoRidePet()
+    pcall(function()
+        local mountingEvent = ReplicatedStorage:FindFirstChild("Remotes") 
+            and ReplicatedStorage.Remotes:FindFirstChild("Game") 
+            and ReplicatedStorage.Remotes.Game:FindFirstChild("Mounting")
+        
+        if mountingEvent and mountingEvent:IsA("RemoteEvent") then
+            mountingEvent:FireServer()
+        end
+
+        for _, descendant in pairs(ReplicatedStorage:GetDescendants()) do
+            if descendant:IsA("RemoteEvent") or descendant:IsA("UnreliableRemoteEvent") then
+                local name = string.lower(descendant.Name)
+                if name:find("ride") or name:find("pet") or name:find("mount") or name:find("equip") then
+                    pcall(function()
+                        descendant:FireServer(true)
+                        descendant:FireServer("Ride")
+                        descendant:FireServer("Mount")
+                    end)
+                end
+            end
+        end
+    end)
+end
+
+-- ==========================================
+-- ฟังก์ชันยกไข่ที่ออกแบบพิเศษสำหรับ Xeno
+-- ==========================================
+local function ClaimEgg(targetEgg)
+    pcall(function()
+        -- วิธีที่ 1: ใช้ fireproximityprompt ถ้าตัวรันรองรับ
+        local success = pcall(function()
+            for _, obj in pairs(targetEgg.Parent:GetDescendants()) do
+                if obj:IsA("ProximityPrompt") then
+                    fireproximityprompt(obj)
+                end
+            end
+            for _, obj in pairs(targetEgg:GetDescendants()) do
+                if obj:IsA("ProximityPrompt") then
+                    fireproximityprompt(obj)
+                end
+            end
+        end)
+
+        -- วิธีที่ 2: ดึง Trigger หรือ Fire Event เผื่อตัวรัน Xeno บล็อกคำสั่ง Prompt
+        for _, obj in pairs(targetEgg.Parent:GetDescendants()) do
+            if obj:IsA("ClickDetector") then
+                fireclickdetector(obj)
+            end
+        end
+
+        -- วิธีที่ 3: สั่ง TouchPart เพื่อกระตุ้นการเก็บไข่อัตโนมัติทางกายภาพ
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            firetouchinterest(char.HumanoidRootPart, targetEgg, 0)
+            task.wait(0.05)
+            firetouchinterest(char.HumanoidRootPart, targetEgg, 1)
+        end
+    end)
+end
+
+-- ==========================================
+-- ระบบจัดการ Connection & ลบ UI เก่า
+-- ==========================================
+local globalEnvironment = getgenv()
+globalEnvironment.maxganUiConnections = globalEnvironment.maxganUiConnections or {}
+
+for _, connection in pairs(globalEnvironment.maxganUiConnections) do
+    pcall(function()
+        connection:Disconnect()
+    end)
+end
+globalEnvironment.maxganUiConnections = {}
+
+local function protectGui(screenGui)
+    if syn and syn.protect_gui then
+        syn.protect_gui(screenGui)
+        screenGui.Parent = game:GetService("CoreGui")
+    elseif protect_gui then
+        protect_gui(screenGui)
+        screenGui.Parent = game:GetService("CoreGui")
+    elseif gethui then
+        screenGui.Parent = gethui()
+    else
+        screenGui.Parent = game:GetService("CoreGui")
+    end
+end
+
+local existingGui = game:GetService("CoreGui"):FindFirstChild("LennonHubClearUI")
+if existingGui then existingGui:Destroy() end
+
+local hiddenGui = gethui and gethui():FindFirstChild("LennonHubClearUI")
+if hiddenGui then hiddenGui:Destroy() end
+
+local LennonHubClearUI = Instance.new("ScreenGui")
+LennonHubClearUI.Name = "LennonHubClearUI"
+LennonHubClearUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+LennonHubClearUI.ResetOnSpawn = false
+protectGui(LennonHubClearUI)
+
+-- ==========================================
+-- TOGGLE BUTTON
+-- ==========================================
+local OpenBtn = Instance.new("ImageButton")
+OpenBtn.Name = "OpenBtn"
+OpenBtn.Parent = LennonHubClearUI
+OpenBtn.BackgroundColor3 = Color3.fromRGB(25, 12, 45)
+OpenBtn.BackgroundTransparency = 0.1
+OpenBtn.Position = UDim2.new(0.02, 0, 0.4, 0)
+OpenBtn.Size = UDim2.new(0, 52, 0, 52)
+OpenBtn.Image = "rbxassetid://6031094678"
+OpenBtn.ScaleType = Enum.ScaleType.Fit
+OpenBtn.ZIndex = 100
+OpenBtn.AutoButtonColor = true
+
+local OpenCorner = Instance.new("UICorner")
+OpenCorner.CornerRadius = UDim.new(1, 0)
+OpenCorner.Parent = OpenBtn
+
+local OpenStroke = Instance.new("UIStroke")
+OpenStroke.Parent = OpenBtn
+OpenStroke.Color = Color3.fromRGB(220, 130, 255)
+OpenStroke.Thickness = 2
+
+local openDragging = false
+local openDragStart
+local openStartPos
+
+globalEnvironment.maxganUiConnections.openButtonInput = OpenBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        openDragging = true
+        openDragStart = input.Position
+        openStartPos = OpenBtn.Position
+
+        local inputEndConnection
+        inputEndConnection = input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                openDragging = false
+                if inputEndConnection then inputEndConnection:Disconnect() end
+            end
+        end)
+    end
+end)
+
+globalEnvironment.maxganUiConnections.inputChanged = UserInputService.InputChanged:Connect(function(input)
+    if openDragging and openDragStart and openStartPos then
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            local delta = input.Position - openDragStart
+            OpenBtn.Position = UDim2.new(
+                openStartPos.X.Scale,
+                openStartPos.X.Offset + delta.X,
+                openStartPos.Y.Scale,
+                openStartPos.Y.Offset + delta.Y
+            )
+        end
+    end
+end)
+
+-- Main Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = LennonHubClearUI
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 10, 40)
+MainFrame.BackgroundTransparency = 0.15
+MainFrame.BorderSizePixel = 0
+MainFrame.Position = UDim2.new(0.5, -140, 0.5, -95)
+MainFrame.Size = UDim2.new(0, 280, 0, 190)
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 12)
+MainCorner.Parent = MainFrame
+
+local function toggleUI()
+    MainFrame.Visible = not MainFrame.Visible
+end
+
+globalEnvironment.maxganUiConnections.openButtonClick = OpenBtn.MouseButton1Click:Connect(toggleUI)
+globalEnvironment.maxganUiConnections.keyboardToggle = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.U then
+        toggleUI()
+    end
+end)
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Parent = MainFrame
+MainStroke.Thickness = 2
+MainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+local BorderGradient = Instance.new("UIGradient")
+BorderGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 100, 255)),
+    ColorSequenceKeypoint.new(0.3, Color3.fromRGB(160, 60, 255)),
+    ColorSequenceKeypoint.new(0.6, Color3.fromRGB(80, 200, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 255))
+})
+BorderGradient.Parent = MainStroke
+
+globalEnvironment.maxganUiConnections.borderAnimation = RunService.RenderStepped:Connect(function(delta)
+    BorderGradient.Rotation = (BorderGradient.Rotation + delta * 90) % 360
+end)
+
+-- UI Labels & Status
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Parent = MainFrame
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Position = UDim2.new(0.06, 0, 0.05, 0)
+TitleLabel.Size = UDim2.new(0, 100, 0, 14)
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.Text = "MAXGAN SHOP"
+TitleLabel.TextColor3 = Color3.fromRGB(245, 225, 255)
+TitleLabel.TextSize = 11
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local SubTitleLabel = Instance.new("TextLabel")
+SubTitleLabel.Parent = MainFrame
+SubTitleLabel.BackgroundTransparency = 1
+SubTitleLabel.Position = UDim2.new(0.06, 0, 0.13, 0)
+SubTitleLabel.Size = UDim2.new(0, 140, 0, 12)
+SubTitleLabel.Font = Enum.Font.Gotham
+SubTitleLabel.Text = "XENO EXECUTOR FIXED"
+SubTitleLabel.TextColor3 = Color3.fromRGB(170, 140, 200)
+SubTitleLabel.TextSize = 7
+SubTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Parent = MainFrame
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Position = UDim2.new(0.87, 0, 0.04, 0)
+CloseBtn.Size = UDim2.new(0, 22, 0, 22)
+CloseBtn.Font = Enum.Font.Gotham
+CloseBtn.Text = "×"
+CloseBtn.TextColor3 = Color3.fromRGB(235, 195, 255)
+CloseBtn.TextSize = 14
+CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
+
+local CardFrame = Instance.new("Frame")
+CardFrame.Parent = MainFrame
+CardFrame.BackgroundColor3 = Color3.fromRGB(28, 14, 50)
+CardFrame.BackgroundTransparency = 0.2
+CardFrame.BorderSizePixel = 0
+CardFrame.Position = UDim2.new(0.04, 0, 0.25, 0)
+CardFrame.Size = UDim2.new(0.92, 0, 0.38, 0)
+
+local CardCorner = Instance.new("UICorner")
+CardCorner.CornerRadius = UDim.new(0, 😎
+CardCorner.Parent = CardFrame
+
+local StatusTitle = Instance.new("TextLabel")
+StatusTitle.Parent = CardFrame
+StatusTitle.BackgroundTransparency = 1
+StatusTitle.Position = UDim2.new(0.08, 0, 0.15, 0)
+StatusTitle.Size = UDim2.new(0, 200, 0, 14)
+StatusTitle.Font = Enum.Font.GothamBold
+StatusTitle.Text = "Target: Xeno Fixed System"
+StatusTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+StatusTitle.TextSize = 10
+StatusTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local StatusDesc = Instance.new("TextLabel")
+StatusDesc.Parent = CardFrame
+StatusDesc.BackgroundTransparency = 1
+StatusDesc.Position = UDim2.new(0.08, 0, 0.45, 0)
+StatusDesc.Size = UDim2.new(0.84, 0, 0, 35)
+StatusDesc.Font = Enum.Font.Gotham
+StatusDesc.Text = "Status: Waiting for Toggle..."
+StatusDesc.TextColor3 = Color3.fromRGB(200, 160, 240)
+StatusDesc.TextSize = 9
+StatusDesc.TextXAlignment = Enum.TextXAlignment.Left
+StatusDesc.TextWrapped = true
+
+local ControlCard = Instance.new("Frame")
+ControlCard.Parent = MainFrame
+ControlCard.BackgroundColor3 = Color3.fromRGB(28, 14, 50)
+ControlCard.BackgroundTransparency = 0.2
+ControlCard.BorderSizePixel = 0
+ControlCard.Position = UDim2.new(0.04, 0, 0.67, 0)
+ControlCard.Size = UDim2.new(0.92, 0, 0.28, 0)
+
+local ControlCorner = Instance.new("UICorner")
+ControlCorner.CornerRadius = UDim.new(0, 😎
+ControlCorner.Parent = ControlCard
+
+local ToggleLabel = Instance.new("TextLabel")
+ToggleLabel.Parent = ControlCard
+ToggleLabel.BackgroundTransparency = 1
+ToggleLabel.Position = UDim2.new(0.08, 0, 0.3, 0)
+ToggleLabel.Size = UDim2.new(0, 120, 0, 14)
+ToggleLabel.Font = Enum.Font.GothamBold
+ToggleLabel.Text = "Auto Get Egg"
+ToggleLabel.TextColor3 = Color3.fromRGB(245, 235, 255)
+ToggleLabel.TextSize = 10
+ToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Parent = ControlCard
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 30, 75)
+ToggleBtn.BackgroundTransparency = 0.1
+ToggleBtn.Position = UDim2.new(0.72, 0, 0.22, 0)
+ToggleBtn.Size = UDim2.new(0, 54, 0, 24)
+ToggleBtn.Text = ""
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(1, 0)
+ToggleCorner.Parent = ToggleBtn
+
+local ToggleCircle = Instance.new("Frame")
+ToggleCircle.Parent = ToggleBtn
+ToggleCircle.BackgroundColor3 = Color3.fromRGB(170, 170, 170)
+ToggleCircle.Position = UDim2.new(0.08, 0, 0.15, 0)
+ToggleCircle.Size = UDim2.new(0, 16, 0, 16)
+
+local CircleCorner = Instance.new("UICorner")
+CircleCorner.CornerRadius = UDim.new(1, 0)
+CircleCorner.Parent = ToggleCircle
+
+-- ==========================================
+-- ตรวจสอบเขตบ้านคนอื่น
+-- ==========================================
+local function IsInsideAnyBase(position)
+    local plots = Workspace:FindFirstChild("Plots") or Workspace:FindFirstChild("Bases") or Workspace:FindFirstChild("PlayerPlots")
+    if plots then
+        local myUserIdStr = tostring(LocalPlayer.UserId)
+        for _, base in pairs(plots:GetChildren()) do
+            if base.Name ~= LocalPlayer.Name and base.Name ~= myUserIdStr and not base:GetAttribute("IsOwner") then
+                local basePart = base:FindFirstChildWhichIsA("BasePart")
+                if basePart then
+                    local distance = (Vector3.new(position.X, basePart.Position.Y, position.Z) - basePart.Position).Magnitude
+                    if distance < 50 then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- ==========================================
+-- ระบบหลัก (Xeno Compatible)
+-- ==========================================
+local _G_AutoFarm = false
+
+RunService.Stepped:Connect(function()
+    if _G_AutoFarm then
+        pcall(function()
+            local char = LocalPlayer.Character
+            if char then
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.4)
+        if _G_AutoFarm then
+            pcall(function()
+                local char = LocalPlayer.Character
+                if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+                local hrp = char.HumanoidRootPart
+                local humanoid = char:FindFirstChild("Humanoid")
+
+                if not savedSpawnCFrame then
+                    UpdateSpawnPosition()
+                end
+
+                local basePos = savedSpawnCFrame.Position
+                local targetBaseHeightPos = Vector3.new(basePos.X, basePos.Y + 100, basePos.Z)
+
+                local targetEgg = nil
+                for _, v in pairs(Workspace:GetDescendants()) do
+                    if v:IsA("BasePart") then
+                        local nameLower = v.Name:lower()
+                        local parentName = v.Parent and v.Parent.Name:lower() or ""
+                        
+                        if nameLower:find("blackhole") or parentName:find("blackhole") or 
+                           nameLower:find("angel") or parentName:find("angel") or 
+                           nameLower:find("cherub") or parentName:find("cherub") or
+                           nameLower:find("secret") or parentName:find("secret") then
+                            
+                            if not IsInsideAnyBase(v.Position) then
+                                targetEgg = v
+                                break
+                            end
+                        end
+                    end
+                end
+
+                if not targetEgg then
+                    StatusDesc.Text = "Status: No eggs. Hovering at Base..."
+                    
+                    if humanoid then 
+                        humanoid.PlatformStand = false 
+                        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                        humanoid.WalkSpeed = 16 
+                    end
+
+                    local bvWait = Instance.new("BodyVelocity")
+                    bvWait.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    bvWait.Velocity = Vector3.new(0, 0, 0)
+                    bvWait.Parent = hrp
+
+                    local bgWait = Instance.new("BodyGyro")
+                    bgWait.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                    bgWait.CFrame = hrp.CFrame
+                    bgWait.Parent = hrp
+
+                    while _G_AutoFarm and not targetEgg and (hrp.Position - targetBaseHeightPos).Magnitude > 5 do
+                        local dir = (targetBaseHeightPos - hrp.Position).Unit
+                        bvWait.Velocity = dir * 450
+                        bgWait.CFrame = CFrame.new(hrp.Position, targetBaseHeightPos)
+                        
+                        for _, v in pairs(Workspace:GetDescendants()) do
+                            if v:IsA("BasePart") then
+                                local nL = v.Name:lower()
+                                local pN = v.Parent and v.Parent.Name:lower() or ""
+                                if nL:find("blackhole") or pN:find("blackhole") or nL:find("angel") or pN:find("angel") or nL:find("cherub") or pN:find("cherub") or nL:find("secret") or pN:find("secret") then
+                                    if not IsInsideAnyBase(v.Position) then
+                                        targetEgg = v
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                        task.wait()
+                    end
+                    bvWait:Destroy()
+                    bgWait:Destroy()
+
+                    hrp.CFrame = CFrame.new(targetBaseHeightPos)
+                    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+
+                else
+                    StatusDesc.Text = "Status: Flying to Egg..."
+                    
+                    if humanoid then 
+                        humanoid.PlatformStand = false 
+                        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                        humanoid.WalkSpeed = 16 
+                    end
+
+                    local bv = Instance.new("BodyVelocity")
+                    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    bv.Velocity = Vector3.new(0, 0, 0)
+                    bv.Parent = hrp
+
+                    local bg = Instance.new("BodyGyro")
+                    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                    bg.CFrame = hrp.CFrame
+                    bg.Parent = hrp
+
+                    local targetPos = targetEgg.Position + Vector3.new(0, 2, 0)
+                    while _G_AutoFarm and targetEgg and targetEgg.Parent and (hrp.Position - targetPos).Magnitude > 5 do
+                        local direction = (targetPos - hrp.Position).Unit
+                        bv.Velocity = direction * 450
+                        bg.CFrame = CFrame.new(hrp.Position, targetPos)
+                        task.wait()
+                    end
+
+                    -- เรียกใช้ระบบเก็บไข่ที่รองรับ Xeno
+                    StatusDesc.Text = "Status: Claiming Egg (Xeno Fixed)..."
+                    if targetEgg and targetEgg.Parent then
+                        ClaimEgg(targetEgg)
+                    end
+                    task.wait(0.3)
+
+                    StatusDesc.Text = "Status: Firing Mount Remote..."
+                    AutoRidePet()
+                    task.wait(0.3)
+
+                    if savedSpawnCFrame and _G_AutoFarm then
+                        StatusDesc.Text = "Status: Flying back to Base..."
+
+                        local timeout = 0
+                        while _G_AutoFarm and (hrp.Position - targetBaseHeightPos).Magnitude > 8 and timeout < 30 do
+                            local dir = (targetBaseHeightPos - hrp.Position).Unit
+                            bv.Velocity = dir * 450
+                            bg.CFrame = CFrame.new(hrp.Position, targetBaseHeightPos)
+                            timeout = timeout + 0.05
+                            task.wait(0.05)
+                        end
+
+                        bv:Destroy()
+                        bg:Destroy()
+                        
+                        hrp.CFrame = CFrame.new(targetBaseHeightPos)
+                        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    end
+                end
+            end)
+        else
+            StatusDesc.Text = "Status: System Stopped"
+        end
+    end
+end)
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    UpdateSpawnPosition()
+    
+    _G_AutoFarm = not _G_AutoFarm
+    if _G_AutoFarm then
+        TweenService:Create(ToggleBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(160, 80, 240)}):Play()
+        ToggleCircle:TweenPosition(UDim2.new(0.55, 0, 0.15, 0), "Out", "Sine", 0.12, true)
+        ToggleCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    else
+        TweenService:Create(ToggleBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(50, 30, 75)}):Play()
+        ToggleCircle:TweenPosition(UDim2.new(0.08, 0, 0.15, 0), "Out", "Sine", 0.12, true)
+        ToggleCircle.BackgroundColor3 = Color3.fromRGB(170, 170, 170)
+    end
+end)
